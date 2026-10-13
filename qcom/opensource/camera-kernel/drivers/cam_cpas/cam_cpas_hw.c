@@ -1248,8 +1248,11 @@ static int cam_cpas_util_set_camnoc_axi_hlos_clk_rate(struct cam_hw_soc_info *so
 	 * client.
 	 */
 	if (cpas_core->streamon_clients) {
+		hlos_clk_rate = soc_info->clk_rate[CAM_NOMINAL_VOTE][soc_info->src_clk_idx];
 		rc = cam_soc_util_set_src_clk_rate(soc_info, CAM_CLK_SW_CLIENT_IDX,
 			hlos_clk_rate, 0);
+		CAM_INFO(CAM_CPAS, "applied camnoc clk: %lld",
+		cam_wrapper_clk_get_rate(soc_info->clk[soc_info->src_clk_idx]));
 		if (rc)
 			CAM_ERR(CAM_CPAS,
 				"Failed in setting camnoc axi clk [BW Clk]:[%llu %lld] rc:%d",

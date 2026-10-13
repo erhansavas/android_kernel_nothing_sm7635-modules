@@ -529,6 +529,14 @@ struct cam_cmd_probe {
  * @logical_camera_id :   Logical Camera ID
  * @sensor_name       :   Sensor's name
  * @reserved
+ * 
+ * add for extern i2c probe begin @{
+ * extern_slave_addr    : extern slave i2c device addr
+ * extern_reg_addr      : extern i2c read reg addr
+ * extern_expected_data : extern i2c read expectd data
+ * extern_data_type     : extern i2c reg data type
+ * extern_addr_type     : extern i2c reg addr type
+ * @}
  */
 struct cam_cmd_probe_v2 {
 	__u8     data_type;
@@ -543,6 +551,13 @@ struct cam_cmd_probe_v2 {
 	__u32    logical_camera_id;
 	char     sensor_name[CAM_SENSOR_NAME_MAX_SIZE];
 	__u32    reserved[4];
+	// add for extern i2c probe begin @{
+	__u32    extern_slave_addr;
+	__u32    extern_reg_addr;
+	__u32    extern_expected_data;
+	__u8     extern_data_type;
+	__u8     extern_addr_type;
+	//@}
 } __attribute__((packed));
 
 /**

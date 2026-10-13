@@ -514,6 +514,8 @@ static void sde_encoder_phys_vid_vblank_irq(void *arg, int irq_idx)
 	u32 event = 0;
 	int pend_ret_fence_cnt = 0;
 	u32 fence_ready = -1;
+	struct sde_encoder_virt *sde_enc;
+
 
 	if (!phys_enc)
 		return;
@@ -530,6 +532,14 @@ static void sde_encoder_phys_vid_vblank_irq(void *arg, int irq_idx)
 	 * so we need to double-check with hw that it accepted the flush bits
 	 */
 	spin_lock_irqsave(phys_enc->enc_spinlock, lock_flags);
+
+
+	sde_enc = to_sde_encoder_virt(phys_enc->parent);
+	if (atomic_read(&sde_enc->vid_wait_vsync_cnt) > 0) {
+		atomic_set(&sde_enc->vid_wait_vsync_cnt, 0);
+		wake_up_all(&sde_enc->wait_queue);
+	}
+
 
 	old_cnt = atomic_read(&phys_enc->pending_kickoff_cnt);
 
