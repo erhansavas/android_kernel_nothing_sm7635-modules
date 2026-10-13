@@ -534,6 +534,9 @@ struct wcd_mbhc_cb {
 	void (*zdet_leakage_resistance)(struct wcd_mbhc *mbhc, bool enable);
 	int (*mbhc_force_micbias_disable)(struct snd_soc_component *component,
 				int micb_num);
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+	void (*mbhc_micbias_reg_detect)(struct snd_soc_component *component);
+#endif
 };
 
 struct wcd_mbhc_fn {

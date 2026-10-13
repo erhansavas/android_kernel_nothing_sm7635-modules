@@ -14,6 +14,9 @@
 #include <asoc/sdca-registers-api.h>
 #include "wcd9378-mbhc.h"
 #include "wcd9378.h"
+#include <linux/kobject.h>
+#include <linux/workqueue.h>
+#include <linux/jiffies.h>
 
 #define SWR_SCP_CONTROL    0x44
 #define SWR_SCP_HOST_CLK_DIV2_CTL_BANK 0xE0
@@ -146,6 +149,16 @@ struct wcd9378_priv {
 	/* wcd to swr dmic notification */
 	bool notify_swr_dmic;
 	struct blocking_notifier_head notifier;
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *debugfs_wcd9378_dent;
+	struct dentry *debugfs_reg_dump;
+	unsigned int read_data;
+#endif
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+	struct workqueue_struct *ssr_workqueue;
+	struct work_struct ssr_work;
+	unsigned long last_ssr_jiffies;
+#endif
 };
 
 struct wcd9378_micbias_setting {

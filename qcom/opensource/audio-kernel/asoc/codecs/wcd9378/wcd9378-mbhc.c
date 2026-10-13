@@ -841,6 +841,14 @@ static int wcd9378_mbhc_force_micbias_disable(struct snd_soc_component *componen
 
 	return wcd9378_micbias_control(component, micb_num, MICB_DISABLE, false);
 }
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+static void wcd9378_mbhc_micbias_reg_detect(struct snd_soc_component *component)
+{
+	struct wcd9378_priv *wcd9378 = dev_get_drvdata(component->dev);
+	queue_work(wcd9378->ssr_workqueue, &wcd9378->ssr_work);
+	dev_dbg(component->dev, "%s ANALOG_ANA_BIAS reg detect when headset plug in\n", __func__);
+}
+#endif
 
 static const struct wcd_mbhc_cb mbhc_cb = {
 	.request_irq = wcd9378_mbhc_request_irq,
@@ -869,6 +877,9 @@ static const struct wcd_mbhc_cb mbhc_cb = {
 	.mbhc_moisture_detect_en = wcd9378_mbhc_moisture_detect_en,
 	.bcs_enable = wcd9378_mbhc_bcs_enable,
 	.mbhc_force_micbias_disable = wcd9378_mbhc_force_micbias_disable,
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+	.mbhc_micbias_reg_detect = wcd9378_mbhc_micbias_reg_detect,
+#endif
 };
 
 static int wcd9378_get_hph_type(struct snd_kcontrol *kcontrol,
