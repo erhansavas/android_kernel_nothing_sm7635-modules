@@ -10885,14 +10885,30 @@ static int hdd_config_latency_level(struct wlan_hdd_link_info *link_info,
 	if (!hdd_is_wlm_latency_manager_supported(hdd_ctx))
 		return -ENOTSUPP;
 
+    //BELL-5310. When use Android auto, wifi scan does not work.  @{
+    wma_set_oem_latency_flags(0x0);
+    //@}
 	latency_level = nla_get_u16(attr);
 	switch (latency_level) {
 	case QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_NORMAL:
 	case QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_XR:
-	case QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_LOW:
-	case QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_ULTRALOW:
+    case QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_LOW:
+        //BELL-5310. When use Android auto, wifi scan does not work.  @{       
+        break;
+        //@}
+    case QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_ULTRALOW:
+        ////BELL-5310. When use Android auto, wifi scan does not work.@{
+        // clear wifi scan bits.
+        wma_set_oem_latency_flags(0x3);
+        //@}
 		/* valid values */
 		break;
+    // BELL-5310. When use Android auto, wifi scan does not work. @{
+    case QCA_WLAN_VENDOR_ATTR_CONFIG_LATENCY_LEVEL_NT_ULTRALOW:
+        // Since NT_Ultralow is a dummy level from ap, map it to QC ultralow.
+        latency_level -= 1;
+        break;
+    //@}
 	default:
 		hdd_err("Invalid value %u", latency_level);
 		return -EINVAL;
@@ -15915,6 +15931,13 @@ __wlan_hdd_cfg80211_set_ns_offload(struct wiphy *wiphy,
 	struct wlan_objmgr_vdev *vdev;
 
 	hdd_enter_dev(wdev->netdev);
+
+	/* Flush any scheduled inet change notifier work
+	 * This is to make sure set NS offload params
+	 * sent to FW are serialized to avoid race condition
+	 */
+	flush_work(&adapter->ipv4_notifier_work);
+	hdd_adapter_flush_ipv6_notifier_work(adapter);
 
 	if (QDF_GLOBAL_FTM_MODE == hdd_get_conparam()) {
 		hdd_err("Command not allowed in FTM mode");

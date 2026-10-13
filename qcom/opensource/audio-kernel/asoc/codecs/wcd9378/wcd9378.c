@@ -25,6 +25,9 @@
 #include "wcd9378.h"
 #include "internal.h"
 #include "asoc/bolero-slave-internal.h"
+#include <linux/debugfs.h>
+#include <linux/uaccess.h>
+#include <linux/fs.h>
 
 #define NUM_SWRS_DT_PARAMS 5
 
@@ -1430,6 +1433,9 @@ static int wcd9378_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_component *component =
 			snd_soc_dapm_to_component(w->dapm);
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+	struct wcd9378_priv *wcd9378 = snd_soc_component_get_drvdata(component);
+#endif
 	int micb_num = 0;
 
 	dev_dbg(component->dev, "%s: wname: %s, event: %d\n",
@@ -1448,6 +1454,10 @@ static int wcd9378_codec_enable_micbias(struct snd_soc_dapm_widget *w,
 	case SND_SOC_DAPM_PRE_PMU:
 		wcd9378_micbias_control(component, micb_num,
 				MICB_ENABLE, true);
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+		queue_work(wcd9378->ssr_workqueue, &wcd9378->ssr_work);
+		dev_dbg(component->dev, "%s ANALOG_ANA_BIAS reg detect when enable micbias\n", __func__);
+#endif
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		usleep_range(1000, 1100);
@@ -2839,7 +2849,7 @@ static int wcd9378_hph_get_gain(struct snd_kcontrol *kcontrol,
 	offset /= 0x180;
 	ucontrol->value.enumerated.item[0] = offset;
 
-	dev_dbg(component->dev, "%s： offset is 0x%0x\n", __func__, offset);
+	dev_dbg(component->dev, "%s: offset is 0x%0x\n", __func__, offset);
 	return 0;
 }
 
@@ -3997,6 +4007,67 @@ static int wcd9378_wcd_mode_check(struct snd_soc_component *component)
 	return 0;
 }
 
+#ifdef CONFIG_DEBUG_FS
+
+#define WCD_REG_MAX_BUF_LEN 20
+#define BYTES_PER_LINE 17
+
+static ssize_t wcd9378_swrslave_reg_show(struct device *pdev, char __user *ubuf,
+					 size_t count, loff_t *ppos)
+{
+	int i, reg_val, len;
+	ssize_t total = 0;
+	char tmp_buf[WCD_REG_MAX_BUF_LEN];
+	int reg_cnt = sizeof(dump_reg) / sizeof(u32);
+
+	if (!ubuf || !ppos)
+		return 0;
+
+	for (i = ((int)*ppos / BYTES_PER_LINE); i < reg_cnt; i++) {
+		reg_val = snd_soc_component_read(
+			(struct snd_soc_component *)pdev, dump_reg[i]);
+		len = scnprintf(tmp_buf, sizeof(tmp_buf), "0x%.8x: 0x%.2x\n",
+				dump_reg[i], (reg_val & 0xFF));
+		if (((total + len) >= count - 1) || (len < 0))
+			break;
+		if (copy_to_user((ubuf + total), tmp_buf, len)) {
+			pr_err("%s: fail to copy reg dump\n", __func__);
+			total = -EFAULT;
+			goto copy_err;
+		}
+		total += len;
+		*ppos += len;
+	}
+
+copy_err:
+
+	return total;
+}
+
+static ssize_t codec_debug_dump(struct file *file, char __user *ubuf,
+				size_t count, loff_t *ppos)
+{
+	struct device *pdev;
+
+	if (!count || !file || !ppos || !ubuf)
+		return -EINVAL;
+
+	pdev = file->private_data;
+	if (!pdev)
+		return -EINVAL;
+
+	if (*ppos < 0)
+		return -EINVAL;
+
+	return wcd9378_swrslave_reg_show(pdev, ubuf, count, ppos);
+}
+
+static const struct file_operations codec_debug_dump_ops = {
+	.open = simple_open,
+	.read = codec_debug_dump,
+};
+#endif
+
 static int wcd9378_soc_codec_probe(struct snd_soc_component *component)
 {
 	struct wcd9378_priv *wcd9378 = snd_soc_component_get_drvdata(component);
@@ -4084,6 +4155,23 @@ static int wcd9378_soc_codec_probe(struct snd_soc_component *component)
 
 	sdca_devices_debugfs_dentry_create(wcd9378->debugfs_info,
 				wcd9378->regdump_info);
+#ifdef CONFIG_DEBUG_FS
+	if (!wcd9378->debugfs_wcd9378_dent) {
+		wcd9378->debugfs_wcd9378_dent =
+			debugfs_create_dir("wcd9378-register-dump", 0);
+		if (!IS_ERR(wcd9378->debugfs_wcd9378_dent)) {
+			wcd9378->debugfs_reg_dump = debugfs_create_file(
+				"registers", S_IFREG | 0444,
+				wcd9378->debugfs_wcd9378_dent,
+				(void *)component, &codec_debug_dump_ops);
+
+			if (IS_ERR(wcd9378->debugfs_reg_dump)) {
+				pr_err("debugfs_create_file failed\n");
+			}
+		}
+	}
+#endif
+
 exit:
 	return ret;
 }
@@ -4498,6 +4586,38 @@ static int wcd9378_add_slave_components(struct device *dev,
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+static void wcd9378_ssr_work(struct work_struct *work)
+{
+	struct wcd9378_priv *wcd9378 =
+		container_of(work, struct wcd9378_priv, ssr_work);
+	int reg_val = 0;
+	unsigned long now = jiffies;
+	const unsigned long debounce_time = msecs_to_jiffies(3000);
+	char *envp[] = {
+		"SSR_TRIGGER=1",
+		"REGISTER=WCD9378_ANA_BIAS",
+		"VALUE=0",
+		NULL
+	};
+
+	regcache_cache_bypass(wcd9378->regmap, true);
+	regmap_read(wcd9378->regmap, WCD9378_ANA_BIAS, &reg_val);
+	regcache_cache_bypass(wcd9378->regmap, false);
+
+	if (reg_val == 0) {
+		if (time_after(now, wcd9378->last_ssr_jiffies + debounce_time)) {
+			wcd9378->last_ssr_jiffies = now;
+			kobject_uevent_env(&wcd9378->dev->kobj, KOBJ_CHANGE, envp);
+			dev_info(wcd9378->dev, "ssr uevent triggered\n");
+		} else {
+			dev_info(wcd9378->dev, "less than 3 seconds since the last trigger, "
+									"dont send uevent\n");
+		}
+	}
+}
+#endif
+
 static int wcd9378_probe(struct platform_device *pdev)
 {
 	struct component_match *match = NULL;
@@ -4589,6 +4709,14 @@ static int wcd9378_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+	wcd9378->ssr_workqueue = create_singlethread_workqueue("wcd9378_wq");
+	if (!wcd9378->ssr_workqueue) {
+		dev_err(dev, "%s create ssr workqueue fail\n", __func__);
+	}
+	INIT_WORK(&wcd9378->ssr_work, wcd9378_ssr_work);
+	wcd9378->last_ssr_jiffies = 0;
+#endif
 	mutex_init(&wcd9378->wakeup_lock);
 	mutex_init(&wcd9378->micb_lock);
 	mutex_init(&wcd9378->sys_usage_lock);
@@ -4625,7 +4753,13 @@ static int wcd9378_remove(struct platform_device *pdev)
 	mutex_destroy(&wcd9378->wakeup_lock);
 	mutex_destroy(&wcd9378->sys_usage_lock);
 	dev_set_drvdata(&pdev->dev, NULL);
-
+#if IS_ENABLED(CONFIG_NOTHING_IS_FROGGER)
+	cancel_work_sync(&wcd9378->ssr_work);
+	if (wcd9378->ssr_workqueue) {
+		destroy_workqueue(wcd9378->ssr_workqueue);
+		wcd9378->ssr_workqueue = NULL;
+	}
+#endif
 	return 0;
 }
 

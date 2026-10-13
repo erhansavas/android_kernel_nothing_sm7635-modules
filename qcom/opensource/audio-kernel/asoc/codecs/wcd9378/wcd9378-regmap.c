@@ -12,7 +12,7 @@ extern const u8 wcd9378_reg_access[WCD9378_NUM_REGISTERS];
 static struct reg_default wcd9378_defaults[] = {
 	{SWRS_SCP_SDCA_INTSTAT_1,                0x00},
 	{SWRS_SCP_SDCA_INTSTAT_2,                0x00},
-	{SWRS_SCP_SDCA_INTSTAT_2,                0x00},
+	{SWRS_SCP_SDCA_INTSTAT_3,                0x00},
 	{SWRS_SCP_SDCA_INTMASK_1,                0x00},
 	{SWRS_SCP_SDCA_INTMASK_2,                0x00},
 	{SWRS_SCP_SDCA_INTMASK_3,                0x00},

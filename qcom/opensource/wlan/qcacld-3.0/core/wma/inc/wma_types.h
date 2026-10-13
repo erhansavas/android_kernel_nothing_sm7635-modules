@@ -651,6 +651,10 @@ void wma_get_rx_retry_cnt(struct mac_context *mac, uint8_t vdev_id,
 QDF_STATUS wma_set_wlm_latency_level(void *wma_ptr,
 			struct wlm_latency_level_param *latency_params);
 
+
+//BELL-5310. When use Android auto, wifi scan does not work.
+void wma_set_oem_latency_flags(uint32_t flag);
+
 /**
  * wma_ds_peek_rx_packet_info() - peek rx packet info
  * @pkt: packet
